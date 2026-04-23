@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from pinecone import Pinecone
 from langchain_pinecone import PineconeVectorStore
 
@@ -20,10 +20,11 @@ llm = ChatGroq(
     groq_api_key=os.getenv("GROQ_API_KEY")
 )
 
-# ---------------- LIGHTWEIGHT EMBEDDINGS ----------------
-# 🔥 This model is small → works on Render
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/paraphrase-MiniLM-L3-v2"
+# ---------------- EMBEDDINGS (API BASED ✅) ----------------
+embeddings = HuggingFaceEndpointEmbeddings(
+    huggingfacehub_api_token=os.getenv("HUGGINGFACE_API_KEY"),
+    repo_id="sentence-transformers/all-MiniLM-L6-v2",
+    task="feature-extraction"
 )
 
 # ---------------- PINECONE ----------------
@@ -32,7 +33,7 @@ index_name = os.getenv("PINECONE_INDEX", "company-rag")
 
 vectorstore = PineconeVectorStore.from_existing_index(
     index_name=index_name,
-    embedding=embeddings   # ✅ REQUIRED
+    embedding=embeddings
 )
 
 # ---------------- RBAC ----------------
@@ -45,15 +46,15 @@ ROLE_ACCESS = {
     "Employee": ["general"]
 }
 
-# ---------------- LLM ANSWER ----------------
+# ---------------- ANSWER ----------------
 def generate_answer(docs, question):
     context = "\n\n".join([d.page_content for d in docs])
 
     prompt = f"""
 You are FinSolve AI Assistant.
 
-Answer clearly and professionally based only on the context below.
-If answer is not found, say "No data available".
+Answer clearly based only on the context.
+If answer not found, say "No data available".
 
 Context:
 {context}
@@ -80,12 +81,12 @@ def ask():
         if not question:
             return jsonify({"error": "Question missing"}), 400
 
-        # 🔐 RBAC filtering
         allowed_domains = ROLE_ACCESS.get(role, [])
 
+        # 🔥 Proper RBAC + domain filter
         docs = vectorstore.similarity_search(
             question,
-            k=8,   # 🔥 slightly reduced (memory safe)
+            k=5,
             filter={
                 "allowed_roles": {"$in": [role]},
                 "domain": {"$in": allowed_domains}
@@ -93,7 +94,7 @@ def ask():
         )
 
         if not docs:
-            return jsonify({"answer": "No relevant data found."})
+            return jsonify({"answer": "❌ No access or no data found"})
 
         answer = generate_answer(docs, question)
 
