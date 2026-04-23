@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# Virtual env
+myvenv/
+.env/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Pinecone local files (if any)
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
