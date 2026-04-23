@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
-from langchain_huggingface import HuggingFaceEmbeddings
 from pinecone import Pinecone
 from langchain_pinecone import PineconeVectorStore
 
@@ -14,24 +13,19 @@ load_dotenv()
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
-# ---------------- LLM ----------------
+# ---------------- LLM (Groq) ----------------
 llm = ChatGroq(
     model_name="llama-3.3-70b-versatile",
     groq_api_key=os.getenv("GROQ_API_KEY")
-)
-
-# ---------------- EMBEDDINGS ----------------
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/paraphrase-MiniLM-L3-v2"
 )
 
 # ---------------- PINECONE ----------------
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index_name = os.getenv("PINECONE_INDEX", "company-rag")
 
+# 🔥 IMPORTANT: No embeddings here (fix for memory issue)
 vectorstore = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
-    embedding=embeddings
+    index_name=index_name
 )
 
 # ---------------- RBAC ----------------
@@ -49,9 +43,9 @@ def generate_answer(docs, question):
     context = "\n\n".join([d.page_content for d in docs])
 
     prompt = f"""
-You are a company AI assistant.
+You are FinSolve AI Assistant.
 
-Answer clearly based only on the context below.
+Answer clearly and professionally based only on the context below.
 If answer is not found, say "No data available".
 
 Context:
@@ -79,13 +73,12 @@ def ask():
         if not question:
             return jsonify({"error": "Question missing"}), 400
 
-        # 🔐 RBAC
+        # 🔐 RBAC filtering
         allowed_domains = ROLE_ACCESS.get(role, [])
 
-        # 🔍 Retrieval (improved)
         docs = vectorstore.similarity_search(
             question,
-            k=10,   # 🔥 increased results
+            k=10,  # 🔥 better retrieval
             filter={
                 "allowed_roles": {"$in": [role]},
                 "domain": {"$in": allowed_domains}
@@ -95,7 +88,7 @@ def ask():
         if not docs:
             return jsonify({"answer": "No relevant data found."})
 
-        # 🤖 LLM
+        # 🤖 Generate response
         answer = generate_answer(docs, question)
 
         return jsonify({"answer": answer})
